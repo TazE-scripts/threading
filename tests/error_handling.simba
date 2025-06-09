@@ -1,5 +1,5 @@
 //program Test_Error_Handling;
-{$I ../threading.simba}
+{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
 
 var
   ExceptionMessages: TStringArray;
