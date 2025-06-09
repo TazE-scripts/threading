@@ -1,0 +1,196 @@
+//program Test_Scheduler_Basic;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+var
+  ScheduledTaskCount: Integer;
+  LastExecutedTask: String;
+  ExecutionLock: TLock;
+
+procedure TestTask1();
+begin
+  ExecutionLock.Enter();
+  try
+    Inc(ScheduledTaskCount);
+    LastExecutedTask := 'Task1';
+  finally
+    ExecutionLock.Leave();
+  end;
+end;
+
+procedure TestTask2();
+begin
+  ExecutionLock.Enter();
+  try
+    Inc(ScheduledTaskCount);
+    LastExecutedTask := 'Task2';
+  finally
+    ExecutionLock.Leave();
+  end;
+end;
+
+function TestScheduleAndExecute(): Boolean;
+var
+  Scheduler: TScheduler;
+  InitialCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing task scheduling and execution...');
+  
+  ExecutionLock := TLock.Create();
+  ScheduledTaskCount := 0;
+  LastExecutedTask := '';
+  
+  Scheduler.Init('TestScheduler', 2);
+  
+  // Schedule a task to run every 100ms
+  _Assert(Scheduler.Schedule('TestTask1', @TestTask1, 100), 'Should successfully schedule task');
+  
+  InitialCount := ScheduledTaskCount;
+  Sleep(250); // Wait for at least 2 executions
+  
+  _Assert(ScheduledTaskCount > InitialCount, 'Scheduled task should have executed');
+  _Assert(LastExecutedTask = 'Task1', 'Should have executed the correct task');
+  
+  Scheduler.Free();
+  ExecutionLock.Free();
+end;
+
+function TestPauseAndResume(): Boolean;
+var
+  Scheduler: TScheduler;
+  CountBeforePause, CountAfterPause, CountAfterResume: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing pause and resume functionality...');
+  
+  ExecutionLock := TLock.Create();
+  ScheduledTaskCount := 0;
+  
+  Scheduler.Init('PauseTestScheduler', 2);
+  Scheduler.Schedule('PauseTask', @TestTask1, 50);
+  
+  Sleep(150); // Let it run a bit
+  CountBeforePause := ScheduledTaskCount;
+  
+  // Pause the task
+  _Assert(Scheduler.Pause('PauseTask'), 'Should successfully pause task');
+  Sleep(150); // Wait while paused
+  CountAfterPause := ScheduledTaskCount;
+  
+  _Assert(CountAfterPause = CountBeforePause, 'Task should not execute while paused');
+  
+  // Resume the task
+  _Assert(Scheduler.Resume('PauseTask'), 'Should successfully resume task');
+  Sleep(150); // Let it run again
+  CountAfterResume := ScheduledTaskCount;
+  
+  _Assert(CountAfterResume > CountAfterPause, 'Task should execute after resume');
+  
+  Scheduler.Free();
+  ExecutionLock.Free();
+end;
+
+function TestUnschedule(): Boolean;
+var
+  Scheduler: TScheduler;
+  TaskList: TStringArray;
+begin
+  Result := True;
+  WriteLn('  Testing task unscheduling...');
+  
+  ExecutionLock := TLock.Create();
+  
+  Scheduler.Init('UnscheduleTestScheduler', 2);
+  Scheduler.Schedule('Task1', @TestTask1, 100);
+  Scheduler.Schedule('Task2', @TestTask2, 100);
+  
+  TaskList := Scheduler.GetTasks();
+  _Assert(Length(TaskList) = 2, 'Should have 2 scheduled tasks');
+  
+  // Unschedule one task
+  _Assert(Scheduler.Unschedule('Task1'), 'Should successfully unschedule task');
+  
+  TaskList := Scheduler.GetTasks();
+  _Assert(Length(TaskList) = 1, 'Should have 1 task remaining after unscheduling');
+  _Assert(TaskList[0] = 'Task2', 'Remaining task should be Task2');
+  
+  // Try to unschedule non-existent task
+  _Assert(not Scheduler.Unschedule('NonExistent'), 'Should fail to unschedule non-existent task');
+  
+  Scheduler.Free();
+  ExecutionLock.Free();
+end;
+
+function TestMultipleTasks(): Boolean;
+var
+  Scheduler: TScheduler;
+  TaskList: TStringArray;
+  InitialCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing multiple scheduled tasks...');
+  
+  ExecutionLock := TLock.Create();
+  ScheduledTaskCount := 0;
+  
+  Scheduler.Init('MultiTaskScheduler', 2);
+  
+  // Schedule multiple tasks with different intervals
+  Scheduler.Schedule('FastTask', @TestTask1, 50);
+  Scheduler.Schedule('SlowTask', @TestTask2, 150);
+  
+  TaskList := Scheduler.GetTasks();
+  _Assert(Length(TaskList) = 2, 'Should have 2 active tasks');
+  
+  InitialCount := ScheduledTaskCount;
+  Sleep(300); // Let them run
+  
+  _Assert(ScheduledTaskCount > InitialCount, 'Multiple tasks should have executed');
+  
+  Scheduler.Free();
+  ExecutionLock.Free();
+end;
+
+function TestInvalidOperations(): Boolean;
+var
+  Scheduler: TScheduler;
+begin
+  Result := True;
+  WriteLn('  Testing invalid operations...');
+  
+  ExecutionLock := TLock.Create();
+  
+  Scheduler.Init('InvalidTestScheduler', 2);
+  
+  // Try to pause non-existent task
+  _Assert(not Scheduler.Pause('NonExistent'), 'Should fail to pause non-existent task');
+  
+  // Try to resume non-existent task
+  _Assert(not Scheduler.Resume('NonExistent'), 'Should fail to resume non-existent task');
+  
+  Scheduler.Free();
+  ExecutionLock.Free();
+end;
+
+function RunSchedulerTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Basic Scheduler Tests...');
+  
+  if not TestScheduleAndExecute() then Result := False;
+  if not TestPauseAndResume() then Result := False;
+  if not TestUnschedule() then Result := False;
+  if not TestMultipleTasks() then Result := False;
+  if not TestInvalidOperations() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunSchedulerTests() then
+    WriteLn('Result: SCHEDULER TESTS PASSED')
+  else
+    WriteLn('Result: SCHEDULER TESTS FAILED');
+end. 

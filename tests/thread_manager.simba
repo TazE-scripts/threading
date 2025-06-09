@@ -1,0 +1,230 @@
+//program Test_Thread_Manager;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+var
+  ExecutedTasks: TStringArray;
+  TaskLock: TLock;
+
+procedure AddExecutedTask(const TaskName: String);
+begin
+  TaskLock.Enter();
+  try
+    SetLength(ExecutedTasks, Length(ExecutedTasks) + 1);
+    ExecutedTasks[High(ExecutedTasks)] := TaskName;
+  finally
+    TaskLock.Leave();
+  end;
+end;
+
+procedure ManagerTask1();
+begin
+  AddExecutedTask('ManagerTask1');
+  Sleep(10);
+end;
+
+procedure ManagerTask2();
+begin
+  AddExecutedTask('ManagerTask2');
+  Sleep(10);
+end;
+
+procedure ScheduledTask();
+begin
+  AddExecutedTask('ScheduledTask');
+end;
+
+function TestManagerInitialization(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing manager initialization...');
+  
+  Manager.Init(4, dlNone);
+  _Assert(Manager.IsSetup, 'Manager should be setup after init');
+  _Assert(Manager.ThreadCount = 4, 'Should use specified thread count');
+  
+  Manager.Free();
+  _Assert(not Manager.IsSetup, 'Manager should not be setup after free');
+end;
+
+function TestTaskSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing task submission...');
+  
+  TaskLock := TLock.Create();
+  SetLength(ExecutedTasks, 0);
+  
+  Manager.Init(2, dlNone);
+  
+  _Assert(Manager.Submit('TestTask1', @ManagerTask1), 'Should successfully submit task');
+  _Assert(Manager.Submit('TestTask2', @ManagerTask2), 'Should successfully submit second task');
+  
+  Manager.Await(2000);
+  
+  _Assert(Length(ExecutedTasks) = 2, 'Should have executed 2 tasks');
+  _Assert((ExecutedTasks[0] = 'ManagerTask1') or (ExecutedTasks[1] = 'ManagerTask1'), 'Should have executed ManagerTask1');
+  _Assert((ExecutedTasks[0] = 'ManagerTask2') or (ExecutedTasks[1] = 'ManagerTask2'), 'Should have executed ManagerTask2');
+  
+  Manager.Free();
+  TaskLock.Free();
+end;
+
+function TestBatchSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+  TaskIDs: TStringArray;
+  Methods: array[0..2] of procedure() of object;
+begin
+  Result := True;
+  WriteLn('  Testing batch submission...');
+  
+  TaskLock := TLock.Create();
+  SetLength(ExecutedTasks, 0);
+  
+  Manager.Init(3, dlNone);
+  
+  SetLength(TaskIDs, 3);
+  TaskIDs[0] := 'BatchTask1';
+  TaskIDs[1] := 'BatchTask2';
+  TaskIDs[2] := 'BatchTask3';
+  
+  Methods[0] := @ManagerTask1;
+  Methods[1] := @ManagerTask2;
+  Methods[2] := @ManagerTask1;
+  
+  _Assert(Manager.SubmitBatch(TaskIDs, Methods), 'Should successfully submit batch');
+  Manager.Await(3000);
+  
+  _Assert(Length(ExecutedTasks) = 3, 'Should have executed all 3 batch tasks');
+  
+  Manager.Free();
+  TaskLock.Free();
+end;
+
+function TestScheduledTasks(): Boolean;
+var
+  Manager: TThreadManager;
+  InitialCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing scheduled tasks...');
+  
+  TaskLock := TLock.Create();
+  SetLength(ExecutedTasks, 0);
+  
+  Manager.Init(2, dlNone);
+  
+  _Assert(Manager.Schedule('RecurringTask', @ScheduledTask, 100), 'Should successfully schedule task');
+  
+  InitialCount := Length(ExecutedTasks);
+  Sleep(250); // Wait for multiple executions
+  
+  _Assert(Length(ExecutedTasks) > InitialCount, 'Scheduled task should have executed multiple times');
+  
+  // Test pause/resume
+  _Assert(Manager.PauseTask('RecurringTask'), 'Should successfully pause task');
+  InitialCount := Length(ExecutedTasks);
+  Sleep(200);
+  _Assert(Length(ExecutedTasks) = InitialCount, 'Task should not execute while paused');
+  
+  _Assert(Manager.ResumeTask('RecurringTask'), 'Should successfully resume task');
+  Sleep(150);
+  _Assert(Length(ExecutedTasks) > InitialCount, 'Task should execute after resume');
+  
+  _Assert(Manager.CancelTask('RecurringTask'), 'Should successfully cancel task');
+  
+  Manager.Free();
+  TaskLock.Free();
+end;
+
+function TestManagerStats(): Boolean;
+var
+  Manager: TThreadManager;
+  Stats: String;
+begin
+  Result := True;
+  WriteLn('  Testing manager statistics...');
+  
+  TaskLock := TLock.Create();
+  SetLength(ExecutedTasks, 0);
+  
+  Manager.Init(2, dlNone);
+  
+  Manager.Submit('StatsTask', @ManagerTask1);
+  Manager.Schedule('StatsScheduled', @ScheduledTask, 200);
+  Manager.Await(1000);
+  
+  Stats := Manager.Stats();
+  _Assert(Stats.Contains('MainPool'), 'Stats should contain pool information');
+  _Assert(Stats.Contains('Scheduled'), 'Stats should contain scheduler information');
+  
+  Manager.Free();
+  TaskLock.Free();
+end;
+
+function TestAutoInitialization(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing auto-initialization...');
+  
+  TaskLock := TLock.Create();
+  SetLength(ExecutedTasks, 0);
+  
+  // Don't call Init explicitly
+  _Assert(Manager.Submit('AutoInitTask', @ManagerTask1), 'Should auto-initialize and submit task');
+  _Assert(Manager.IsSetup, 'Manager should be auto-initialized');
+  
+  Manager.Await(1000);
+  _Assert(Length(ExecutedTasks) = 1, 'Auto-initialized manager should execute task');
+  
+  Manager.Free();
+  TaskLock.Free();
+end;
+
+function TestInvalidOperations(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing invalid operations...');
+  
+  Manager.Init(1, dlNone);
+  
+  // Test invalid task operations
+  _Assert(not Manager.PauseTask('NonExistent'), 'Should fail to pause non-existent task');
+  _Assert(not Manager.ResumeTask('NonExistent'), 'Should fail to resume non-existent task');
+  _Assert(not Manager.CancelTask('NonExistent'), 'Should fail to cancel non-existent task');
+  
+  Manager.Free();
+end;
+
+function RunManagerTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Thread Manager Tests...');
+  
+  if not TestManagerInitialization() then Result := False;
+  if not TestTaskSubmission() then Result := False;
+  if not TestBatchSubmission() then Result := False;
+  if not TestScheduledTasks() then Result := False;
+  if not TestManagerStats() then Result := False;
+  if not TestAutoInitialization() then Result := False;
+  if not TestInvalidOperations() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunManagerTests() then
+    WriteLn('Result: THREAD MANAGER TESTS PASSED')
+  else
+    WriteLn('Result: THREAD MANAGER TESTS FAILED');
+end. 

@@ -1,0 +1,108 @@
+//program Test_Pool_Basic;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+var
+  TaskExecuted: Boolean;
+  TaskID: String;
+
+procedure SimpleTask();
+begin
+  TaskExecuted := True;
+  TaskID := 'SimpleTaskExecuted';
+  Sleep(10);
+end;
+
+function TestPoolInitialization(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing pool initialization...');
+  
+  Pool.Init('TestPool', 2);
+  _Assert(Pool.Name = 'TestPool', 'Pool name should be set correctly');
+  _Assert(Length(Pool.Workers) = 2, 'Should create 2 workers');
+  _Assert(Pool.Running, 'Pool should be running after init');
+  _Assert(not Pool.Terminating, 'Pool should not be terminating');
+  
+  Pool.Free();
+end;
+
+function TestTaskSubmission(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing task submission...');
+  
+  Pool.Init('SubmissionPool', 1);
+  TaskExecuted := False;
+  TaskID := '';
+  
+  _Assert(Pool.Submit('TestTask', @SimpleTask), 'Task submission should succeed');
+  Pool.Await(2000);
+  
+  _Assert(TaskExecuted, 'Task should have been executed');
+  _Assert(TaskID = 'SimpleTaskExecuted', 'Task should have modified global state');
+  
+  Pool.Free();
+end;
+
+function TestPoolStats(): Boolean;
+var
+  Pool: TThreadPool;
+  Stats: String;
+begin
+  Result := True;
+  WriteLn('  Testing pool statistics...');
+  
+  Pool.Init('StatsPool', 2);
+  TaskExecuted := False;
+  
+  Pool.Submit('StatsTask', @SimpleTask);
+  Pool.Await(2000);
+  
+  Stats := Pool.GetStats();
+  _Assert(Stats.Contains('StatsPool'), 'Stats should contain pool name');
+  _Assert(Pool.TasksProcessed = 1, 'Should show 1 processed task');
+  _Assert(Pool.TasksFailed = 0, 'Should show 0 failed tasks');
+  
+  Pool.Free();
+end;
+
+function TestInvalidSubmission(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing invalid task submission...');
+  
+  Pool.Init('InvalidPool', 1);
+  
+  // Test empty task ID
+  _Assert(not Pool.Submit('', @SimpleTask), 'Should reject empty task ID');
+  
+  Pool.Free();
+end;
+
+function RunBasicTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Basic Pool Tests...');
+  
+  if not TestPoolInitialization() then Result := False;
+  if not TestTaskSubmission() then Result := False;
+  if not TestPoolStats() then Result := False;
+  if not TestInvalidSubmission() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunBasicTests() then
+    WriteLn('Result: BASIC POOL TESTS PASSED')
+  else
+    WriteLn('Result: BASIC POOL TESTS FAILED');
+end. 

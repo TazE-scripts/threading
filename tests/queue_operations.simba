@@ -1,0 +1,199 @@
+//program Test_Queue_Operations;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+function TestQueueBasics(): Boolean;
+var
+  Queue: TQueue;
+  Task1, Task2, Retrieved: PTask;
+begin
+  Result := True;
+  WriteLn('  Testing basic queue operations...');
+  
+  Queue.Init();
+  
+  // Test empty queue
+  _Assert(Queue.IsEmpty(), 'New queue should be empty');
+  _Assert(Queue.Count = 0, 'Empty queue count should be 0');
+  _Assert(Queue.Get() = nil, 'Get from empty queue should return nil');
+  
+  // Create test tasks
+  New(Task1);
+  Task1^.ID := 'Task1';
+  Task1^.Priority := 5;
+  Task1^.Next := nil;
+  
+  New(Task2);
+  Task2^.ID := 'Task2';
+  Task2^.Priority := 10;
+  Task2^.Next := nil;
+  
+  // Test adding tasks
+  Queue.Add(Task1);
+  _Assert(not Queue.IsEmpty(), 'Queue should not be empty after adding task');
+  _Assert(Queue.Count = 1, 'Queue count should be 1 after adding one task');
+  
+  Queue.Add(Task2);
+  _Assert(Queue.Count = 2, 'Queue count should be 2 after adding two tasks');
+  
+  // Test priority ordering (higher priority first)
+  Retrieved := Queue.Get();
+  _Assert(Retrieved <> nil, 'Should retrieve a task');
+  _Assert(Retrieved^.ID = 'Task2', 'Should get higher priority task first');
+  _Assert(Queue.Count = 1, 'Queue count should decrease after get');
+  Dispose(Retrieved);
+  
+  Retrieved := Queue.Get();
+  _Assert(Retrieved^.ID = 'Task1', 'Should get remaining task');
+  _Assert(Queue.Count = 0, 'Queue should be empty after getting all tasks');
+  Dispose(Retrieved);
+  
+  Queue.Free();
+end;
+
+function TestQueuePriority(): Boolean;
+var
+  Queue: TQueue;
+  Task1, Task2, Task3, Retrieved: PTask;
+begin
+  Result := True;
+  WriteLn('  Testing queue priority ordering...');
+  
+  Queue.Init();
+  
+  // Create tasks with different priorities
+  New(Task1);
+  Task1^.ID := 'Low';
+  Task1^.Priority := 1;
+  Task1^.Next := nil;
+  
+  New(Task2);
+  Task2^.ID := 'High';
+  Task2^.Priority := 10;
+  Task2^.Next := nil;
+  
+  New(Task3);
+  Task3^.ID := 'Medium';
+  Task3^.Priority := 5;
+  Task3^.Next := nil;
+  
+  // Add in random order
+  Queue.Add(Task1);  // Low priority
+  Queue.Add(Task2);  // High priority  
+  Queue.Add(Task3);  // Medium priority
+  
+  // Should retrieve in priority order (high to low)
+  Retrieved := Queue.Get();
+  _Assert(Retrieved^.ID = 'High', 'First should be highest priority');
+  Dispose(Retrieved);
+  
+  Retrieved := Queue.Get();
+  _Assert(Retrieved^.ID = 'Medium', 'Second should be medium priority');
+  Dispose(Retrieved);
+  
+  Retrieved := Queue.Get();
+  _Assert(Retrieved^.ID = 'Low', 'Third should be lowest priority');
+  Dispose(Retrieved);
+  
+  Queue.Free();
+end;
+
+function TestQueueClear(): Boolean;
+var
+  Queue: TQueue;
+  Task1, Task2: PTask;
+begin
+  Result := True;
+  WriteLn('  Testing queue clear operation...');
+  
+  Queue.Init();
+  
+  // Add some tasks
+  New(Task1);
+  Task1^.ID := 'Task1';
+  Task1^.Priority := 5;
+  Task1^.Next := nil;
+  
+  New(Task2);
+  Task2^.ID := 'Task2';
+  Task2^.Priority := 3;
+  Task2^.Next := nil;
+  
+  Queue.Add(Task1);
+  Queue.Add(Task2);
+  _Assert(Queue.Count = 2, 'Should have 2 tasks before clear');
+  
+  // Clear the queue
+  Queue.Clear();
+  _Assert(Queue.Count = 0, 'Queue should be empty after clear');
+  _Assert(Queue.IsEmpty(), 'Queue should report as empty after clear');
+  _Assert(Queue.Get() = nil, 'Get after clear should return nil');
+  
+  Queue.Free();
+end;
+
+function TestSamePriority(): Boolean;
+var
+  Queue: TQueue;
+  Task1, Task2, Task3: PTask;
+  Retrieved: PTask;
+  FirstID: String;
+begin
+  Result := True;
+  WriteLn('  Testing same priority tasks...');
+  
+  Queue.Init();
+  
+  // Create tasks with same priority
+  New(Task1);
+  Task1^.ID := 'First';
+  Task1^.Priority := 5;
+  Task1^.Next := nil;
+  
+  New(Task2);
+  Task2^.ID := 'Second';
+  Task2^.Priority := 5;
+  Task2^.Next := nil;
+  
+  New(Task3);
+  Task3^.ID := 'Third';
+  Task3^.Priority := 5;
+  Task3^.Next := nil;
+  
+  Queue.Add(Task1);
+  Queue.Add(Task2);
+  Queue.Add(Task3);
+  
+  // For same priority, should maintain insertion order (FIFO)
+  Retrieved := Queue.Get();
+  FirstID := Retrieved^.ID;
+  _Assert(FirstID = 'First', 'First task with same priority should be retrieved first');
+  Dispose(Retrieved);
+  
+  _Assert(Queue.Count = 2, 'Should have 2 tasks remaining');
+  
+  // Clear remaining tasks
+  Queue.Clear();
+  Queue.Free();
+end;
+
+function RunQueueTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Queue Operation Tests...');
+  
+  if not TestQueueBasics() then Result := False;
+  if not TestQueuePriority() then Result := False;
+  if not TestQueueClear() then Result := False;
+  if not TestSamePriority() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunQueueTests() then
+    WriteLn('Result: QUEUE TESTS PASSED')
+  else
+    WriteLn('Result: QUEUE TESTS FAILED');
+end. 

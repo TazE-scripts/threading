@@ -1,0 +1,291 @@
+//program Test_Pool_Callbacks;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+type
+  TCallbackEvent = record
+    TaskName: String;
+    Success: Boolean;
+    ErrorMsg: String;
+    Timestamp: Int64;
+  end;
+
+  TTestState = record
+    CompletionEvents: array of TCallbackEvent;
+    ExceptionEvents: array of TCallbackEvent;
+    CompletionCount: Integer;
+    ExceptionCount: Integer;
+  end;
+
+var
+  State: TTestState;
+
+procedure ResetTestState();
+begin
+  SetLength(State.CompletionEvents, 0);
+  SetLength(State.ExceptionEvents, 0);
+  State.CompletionCount := 0;
+  State.ExceptionCount := 0;
+end;
+
+procedure SuccessfulTask();
+begin
+  // Simple successful task
+  Sleep(10); // Brief work simulation
+end;
+
+procedure FailingTask();
+begin
+  Sleep(5); // Brief work before failure
+  raiseException('Task failed as intended.');
+end;
+
+procedure SlowSuccessfulTask();
+begin
+  Sleep(100); // Longer work simulation
+end;
+
+procedure CompletionCallback(const TaskName: String; Success: Boolean);
+var
+  Index: Integer;
+begin
+  Index := Length(State.CompletionEvents);
+  SetLength(State.CompletionEvents, Index + 1);
+  
+  State.CompletionEvents[Index].TaskName := TaskName;
+  State.CompletionEvents[Index].Success := Success;
+  State.CompletionEvents[Index].Timestamp := Time();
+  
+  Inc(State.CompletionCount);
+end;
+
+procedure ExceptionCallback(const TaskName, Error: String);
+var
+  Index: Integer;
+begin
+  Index := Length(State.ExceptionEvents);
+  SetLength(State.ExceptionEvents, Index + 1);
+  
+  State.ExceptionEvents[Index].TaskName := TaskName;
+  State.ExceptionEvents[Index].ErrorMsg := Error;
+  State.ExceptionEvents[Index].Timestamp := Time();
+  
+  Inc(State.ExceptionCount);
+end;
+
+function FindCompletionEvent(const TaskName: String): Integer;
+var
+  i: Integer;
+begin
+  Result := -1;
+  for i := 0 to High(State.CompletionEvents) do
+    if State.CompletionEvents[i].TaskName = TaskName then
+    begin
+      Result := i;
+      Break;
+    end;
+end;
+
+function FindExceptionEvent(const TaskName: String): Integer;
+var
+  i: Integer;
+begin
+  Result := -1;
+  for i := 0 to High(State.ExceptionEvents) do
+    if State.ExceptionEvents[i].TaskName = TaskName then
+    begin
+      Result := i;
+      Break;
+    end;
+end;
+
+// --- Test Cases ---
+
+function TestSuccessfulTaskCallback(): Boolean;
+var
+  Pool: TThreadPool;
+  EventIndex: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing successful task callback...');
+  
+  Pool.Init('SuccessTestPool', 2);
+  Pool.OnComplete := @CompletionCallback;
+  Pool.OnException := @ExceptionCallback;
+  
+  ResetTestState();
+  Pool.Submit('SuccessTask', @SuccessfulTask);
+  Pool.Await(2000);
+  
+  // Verify completion callback was fired
+  _Assert(State.CompletionCount = 1, 'Expected exactly 1 completion callback');
+  
+  // Verify no exception callback
+  _Assert(State.ExceptionCount = 0, 'Expected no exception callbacks for successful task');
+  
+  // Verify completion event details
+  EventIndex := FindCompletionEvent('SuccessTask');
+  _Assert(EventIndex >= 0, 'Could not find completion event for SuccessTask');
+  _Assert(State.CompletionEvents[EventIndex].Success, 'Expected successful task to report success=true');
+  
+  Pool.Free();
+end;
+
+function TestFailingTaskCallback(): Boolean;
+var
+  Pool: TThreadPool;
+  CompletionIndex, ExceptionIndex: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing failing task callback...');
+  
+  Pool.Init('FailTestPool', 2);
+  Pool.OnComplete := @CompletionCallback;
+  Pool.OnException := @ExceptionCallback;
+  
+  ResetTestState();
+  Pool.Submit('FailTask', @FailingTask);
+  Pool.Await(2000);
+  
+  // Verify both callbacks were fired
+  _Assert(State.CompletionCount = 1, 'Expected exactly 1 completion callback for failed task');
+  _Assert(State.ExceptionCount = 1, 'Expected exactly 1 exception callback for failed task');
+  
+  // Verify completion event details
+  CompletionIndex := FindCompletionEvent('FailTask');
+  _Assert(CompletionIndex >= 0, 'Could not find completion event for FailTask');
+  _Assert(not State.CompletionEvents[CompletionIndex].Success, 'Expected failed task to report success=false');
+  
+  // Verify exception event details
+  ExceptionIndex := FindExceptionEvent('FailTask');
+  _Assert(ExceptionIndex >= 0, 'Could not find exception event for FailTask');
+  _Assert(State.ExceptionEvents[ExceptionIndex].ErrorMsg.Contains('intended'), 'Exception message should contain "intended"');
+  _Assert(State.ExceptionEvents[ExceptionIndex].TaskName = 'FailTask', 'Exception callback should receive correct task name');
+  
+  Pool.Free();
+end;
+
+function TestMultipleTaskCallbacks(): Boolean;
+var
+  Pool: TThreadPool;
+  i, SuccessCount, FailCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing multiple task callbacks...');
+  
+  Pool.Init('MultiTestPool', 4);
+  Pool.OnComplete := @CompletionCallback;
+  Pool.OnException := @ExceptionCallback;
+  
+  ResetTestState();
+  
+  // Submit multiple successful tasks
+  for i := 1 to 3 do
+    Pool.Submit('Success' + ToStr(i), @SuccessfulTask);
+  
+  // Submit multiple failing tasks
+  for i := 1 to 2 do
+    Pool.Submit('Fail' + ToStr(i), @FailingTask);
+  
+  Pool.Await(5000);
+  
+  // Verify total callback counts
+  _Assert(State.CompletionCount = 5, 'Expected 5 completion callbacks (3 success + 2 fail)');
+  _Assert(State.ExceptionCount = 2, 'Expected 2 exception callbacks (2 fail tasks)');
+  
+  // Count successful vs failed completions
+  SuccessCount := 0;
+  FailCount := 0;
+  for i := 0 to High(State.CompletionEvents) do
+    if State.CompletionEvents[i].Success then
+      Inc(SuccessCount)
+    else
+      Inc(FailCount);
+  
+  _Assert(SuccessCount = 3, 'Expected 3 successful completion events');
+  _Assert(FailCount = 2, 'Expected 2 failed completion events');
+  
+  // Verify specific task completion events exist
+  _Assert(FindCompletionEvent('Success1') >= 0, 'Missing completion event for Success1');
+  _Assert(FindCompletionEvent('Success2') >= 0, 'Missing completion event for Success2');
+  _Assert(FindCompletionEvent('Success3') >= 0, 'Missing completion event for Success3');
+  _Assert(FindCompletionEvent('Fail1') >= 0, 'Missing completion event for Fail1');
+  _Assert(FindCompletionEvent('Fail2') >= 0, 'Missing completion event for Fail2');
+  
+  Pool.Free();
+end;
+
+function TestCallbacksWithoutHandlers(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing tasks without callback handlers...');
+  
+  Pool.Init('NoHandlerPool', 2);
+  // Intentionally not setting OnComplete or OnException
+  
+  ResetTestState();
+  Pool.Submit('NoHandlerSuccess', @SuccessfulTask);
+  Pool.Submit('NoHandlerFail', @FailingTask);
+  Pool.Await(2000);
+  
+  // Verify no callbacks were fired (since no handlers set)
+  _Assert(State.CompletionCount = 0, 'Expected no completion callbacks when no handler set');
+  _Assert(State.ExceptionCount = 0, 'Expected no exception callbacks when no handler set');
+  
+  Pool.Free();
+end;
+
+function TestCallbackTiming(): Boolean;
+var
+  Pool: TThreadPool;
+  StartTime, CompletionTime: Int64;
+  EventIndex: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing callback timing...');
+  
+  Pool.Init('TimingTestPool', 1);
+  Pool.OnComplete := @CompletionCallback;
+  
+  ResetTestState();
+  StartTime := Time();
+  Pool.Submit('SlowTask', @SlowSuccessfulTask);
+  Pool.Await(5000);
+  
+  EventIndex := FindCompletionEvent('SlowTask');
+  _Assert(EventIndex >= 0, 'Could not find completion event for SlowTask');
+  
+  CompletionTime := State.CompletionEvents[EventIndex].Timestamp;
+  _Assert(CompletionTime >= StartTime + 90, 'Completion callback should fire after task duration (100ms)');
+  
+  Pool.Free();
+end;
+
+// --- Main Test Runner ---
+
+function RunAllCallbackTests(): Boolean;
+begin
+  Result := True;
+  
+  WriteLn('Running: Pool Callback Handler Tests...');
+  
+  if not TestSuccessfulTaskCallback() then Result := False;
+  if not TestFailingTaskCallback() then Result := False;
+  if not TestMultipleTaskCallbacks() then Result := False;
+  if not TestCallbacksWithoutHandlers() then Result := False;
+  if not TestCallbackTiming() then Result := False;
+  
+  WriteLn('');
+end;
+
+// --- Main Execution Block ---
+
+begin
+  ClearSimbaOutput;
+  
+  if RunAllCallbackTests() then
+    WriteLn('Result: ALL CALLBACK TESTS PASSED')
+  else
+    WriteLn('Result: SOME CALLBACK TESTS FAILED');
+end.

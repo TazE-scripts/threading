@@ -1,0 +1,138 @@
+//program Test_Pool_Priority;
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+var
+  ExecutionOrder: TStringArray;
+  OrderLock: TLock;
+
+procedure AddToOrder(const TaskName: String);
+begin
+  OrderLock.Enter();
+  try
+    SetLength(ExecutionOrder, Length(ExecutionOrder) + 1);
+    ExecutionOrder[High(ExecutionOrder)] := TaskName;
+  finally
+    OrderLock.Leave();
+  end;
+end;
+
+procedure HighPriorityTask();
+begin
+  AddToOrder('High');
+  Sleep(10);
+end;
+
+procedure MediumPriorityTask();
+begin
+  AddToOrder('Medium');
+  Sleep(10);
+end;
+
+procedure LowPriorityTask();
+begin
+  AddToOrder('Low');
+  Sleep(10);
+end;
+
+function TestPriorityOrdering(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing task priority ordering...');
+  
+  OrderLock := TLock.Create();
+  SetLength(ExecutionOrder, 0);
+  
+  // Use single worker to ensure sequential execution
+  Pool.Init('PriorityPool', 1);
+  
+  // Submit tasks in reverse priority order
+  Pool.Submit('LowTask', @LowPriorityTask, 1);
+  Pool.Submit('MediumTask', @MediumPriorityTask, 5);
+  Pool.Submit('HighTask', @HighPriorityTask, 10);
+  
+  Pool.Await(3000);
+  
+  // Verify execution order (highest priority first)
+  _Assert(Length(ExecutionOrder) = 3, 'Should execute all 3 tasks');
+  _Assert(ExecutionOrder[0] = 'High', 'First task should be high priority');
+  _Assert(ExecutionOrder[1] = 'Medium', 'Second task should be medium priority');
+  _Assert(ExecutionOrder[2] = 'Low', 'Third task should be low priority');
+  
+  Pool.Free();
+  OrderLock.Free();
+end;
+
+function TestSamePriority(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing same priority tasks...');
+  
+  OrderLock := TLock.Create();
+  SetLength(ExecutionOrder, 0);
+  
+  Pool.Init('SamePriorityPool', 1);
+  
+  // Submit multiple tasks with same priority
+  Pool.Submit('Task1', @MediumPriorityTask, 5);
+  Pool.Submit('Task2', @MediumPriorityTask, 5);
+  Pool.Submit('Task3', @MediumPriorityTask, 5);
+  
+  Pool.Await(3000);
+  
+  // All should execute (order may vary for same priority)
+  _Assert(Length(ExecutionOrder) = 3, 'Should execute all 3 same-priority tasks');
+  
+  Pool.Free();
+  OrderLock.Free();
+end;
+
+function TestDefaultPriority(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing default priority...');
+  
+  OrderLock := TLock.Create();
+  SetLength(ExecutionOrder, 0);
+  
+  Pool.Init('DefaultPool', 1);
+  
+  // Submit without specifying priority (should default to 0)
+  Pool.Submit('DefaultTask', @MediumPriorityTask);
+  Pool.Submit('HighTask', @HighPriorityTask, 5);
+  
+  Pool.Await(3000);
+  
+  _Assert(Length(ExecutionOrder) = 2, 'Should execute both tasks');
+  _Assert(ExecutionOrder[0] = 'High', 'High priority should execute first');
+  _Assert(ExecutionOrder[1] = 'Medium', 'Default priority should execute second');
+  
+  Pool.Free();
+  OrderLock.Free();
+end;
+
+function RunPriorityTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Priority Tests...');
+  
+  if not TestPriorityOrdering() then Result := False;
+  if not TestSamePriority() then Result := False;
+  if not TestDefaultPriority() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunPriorityTests() then
+    WriteLn('Result: PRIORITY TESTS PASSED')
+  else
+    WriteLn('Result: PRIORITY TESTS FAILED');
+end. 

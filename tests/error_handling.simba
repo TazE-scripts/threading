@@ -1,0 +1,241 @@
+//program Test_Error_Handling;
+{$I ../threading.simba}
+
+var
+  ExceptionMessages: TStringArray;
+  CompletionResults: array of Boolean;
+  CallbackLock: TLock;
+
+procedure AddException(const Msg: String);
+begin
+  CallbackLock.Enter();
+  try
+    SetLength(ExceptionMessages, Length(ExceptionMessages) + 1);
+    ExceptionMessages[High(ExceptionMessages)] := Msg;
+  finally
+    CallbackLock.Leave();
+  end;
+end;
+
+procedure AddCompletion(Success: Boolean);
+begin
+  CallbackLock.Enter();
+  try
+    SetLength(CompletionResults, Length(CompletionResults) + 1);
+    CompletionResults[High(CompletionResults)] := Success;
+  finally
+    CallbackLock.Leave();
+  end;
+end;
+
+procedure ExceptionHandler(const TaskName, Error: String);
+begin
+  AddException(TaskName + ': ' + Error);
+end;
+
+procedure CompletionHandler(const TaskName: String; Success: Boolean);
+begin
+  AddCompletion(Success);
+end;
+
+procedure ThrowingTask();
+begin
+  raiseException('Intentional test exception');
+end;
+
+procedure ValidTask();
+begin
+  Sleep(10);
+end;
+
+function TestTaskExceptions(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing task exception handling...');
+  
+  CallbackLock := TLock.Create();
+  SetLength(ExceptionMessages, 0);
+  SetLength(CompletionResults, 0);
+  
+  Pool.Init('ExceptionPool', 2);
+  Pool.OnException := @ExceptionHandler;
+  Pool.OnComplete := @CompletionHandler;
+  
+  // Submit a task that throws an exception
+  Pool.Submit('ThrowingTask', @ThrowingTask);
+  Pool.Await(2000);
+  
+  _Assert(Length(ExceptionMessages) = 1, 'Should have caught 1 exception');
+  _Assert(ExceptionMessages[0].Contains('ThrowingTask'), 'Exception should contain task name');
+  _Assert(ExceptionMessages[0].Contains('Intentional'), 'Exception should contain error message');
+  
+  _Assert(Length(CompletionResults) = 1, 'Should have 1 completion callback');
+  _Assert(not CompletionResults[0], 'Failed task should report Success=False');
+  
+  Pool.Free();
+  CallbackLock.Free();
+end;
+
+function TestMixedTasks(): Boolean;
+var
+  Pool: TThreadPool;
+  SuccessCount, FailCount: Integer;
+  i: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing mixed valid and failing tasks...');
+  
+  CallbackLock := TLock.Create();
+  SetLength(ExceptionMessages, 0);
+  SetLength(CompletionResults, 0);
+  
+  Pool.Init('MixedPool', 3);
+  Pool.OnException := @ExceptionHandler;
+  Pool.OnComplete := @CompletionHandler;
+  
+  // Submit mix of valid and failing tasks
+  Pool.Submit('ValidTask1', @ValidTask);
+  Pool.Submit('FailTask1', @ThrowingTask);
+  Pool.Submit('ValidTask2', @ValidTask);
+  Pool.Submit('FailTask2', @ThrowingTask);
+  
+  Pool.Await(3000);
+  
+  _Assert(Length(ExceptionMessages) = 2, 'Should have 2 exceptions from failing tasks');
+  _Assert(Length(CompletionResults) = 4, 'Should have 4 completion callbacks');
+  
+  // Count successes and failures
+  SuccessCount := 0;
+  FailCount := 0;
+  for i := 0 to High(CompletionResults) do
+    if CompletionResults[i] then
+      Inc(SuccessCount)
+    else
+      Inc(FailCount);
+  
+  _Assert(SuccessCount = 2, 'Should have 2 successful tasks');
+  _Assert(FailCount = 2, 'Should have 2 failed tasks');
+  
+  Pool.Free();
+  CallbackLock.Free();
+end;
+
+function TestInvalidTaskSubmission(): Boolean;
+var
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing invalid task submissions...');
+  
+  Pool.Init('InvalidPool', 2);
+  
+  // Test empty task ID
+  _Assert(not Pool.Submit('', @ValidTask), 'Should reject empty task ID');
+  
+  // Test pool that's shutting down
+  Pool.Shutdown(1000);
+  _Assert(not Pool.Submit('AfterShutdown', @ValidTask), 'Should reject tasks after shutdown');
+  
+  Pool.Free();
+end;
+
+function TestSchedulerExceptions(): Boolean;
+var
+  Scheduler: TScheduler;
+  InitialExceptionCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing scheduler exception handling...');
+  
+  CallbackLock := TLock.Create();
+  SetLength(ExceptionMessages, 0);
+  
+  Scheduler.Init('ExceptionScheduler', 2);
+  Scheduler.Pool.OnException := @ExceptionHandler;
+  
+  // Schedule a failing task
+  Scheduler.Schedule('FailingScheduled', @ThrowingTask, 100);
+  
+  InitialExceptionCount := Length(ExceptionMessages);
+  Sleep(250); // Let it run and fail a couple times
+  
+  _Assert(Length(ExceptionMessages) > InitialExceptionCount, 'Should have caught scheduler exceptions');
+  
+  Scheduler.Free();
+  CallbackLock.Free();
+end;
+
+function TestManagerExceptions(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing manager exception handling...');
+  
+  CallbackLock := TLock.Create();
+  SetLength(ExceptionMessages, 0);
+  SetLength(CompletionResults, 0);
+  
+  Manager.Init(2, dlNone);
+  Manager.SetExceptionHandler(@ExceptionHandler);
+  Manager.SetCompletionHandler(@CompletionHandler);
+  
+  Manager.Submit('ManagerFailTask', @ThrowingTask);
+  Manager.Submit('ManagerValidTask', @ValidTask);
+  Manager.Await(2000);
+  
+  _Assert(Length(ExceptionMessages) = 1, 'Should have 1 exception from manager');
+  _Assert(Length(CompletionResults) = 2, 'Should have 2 completion callbacks from manager');
+  
+  Manager.Free();
+  CallbackLock.Free();
+end;
+
+function TestEdgeCases(): Boolean;
+var
+  Queue: TQueue;
+  Pool: TThreadPool;
+begin
+  Result := True;
+  WriteLn('  Testing edge cases...');
+  
+  // Test queue with nil task
+  Queue.Init();
+  Queue.Add(nil); // Should handle gracefully
+  _Assert(Queue.Count = 0, 'Adding nil task should not increase count');
+  Queue.Free();
+  
+  // Test pool operations on uninitialized pool
+  Pool.Init('EdgePool', 1);
+  _Assert(Pool.QueueSize() >= 0, 'Queue size should be valid');
+  _Assert(Pool.ActiveWorkers() >= 0, 'Active workers should be valid');
+  _Assert(Pool.BusyWorkers() >= 0, 'Busy workers should be valid');
+  
+  Pool.Free();
+end;
+
+function RunErrorTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Error Handling Tests...');
+  
+  if not TestTaskExceptions() then Result := False;
+  if not TestMixedTasks() then Result := False;
+  if not TestInvalidTaskSubmission() then Result := False;
+  if not TestSchedulerExceptions() then Result := False;
+  if not TestManagerExceptions() then Result := False;
+  if not TestEdgeCases() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunErrorTests() then
+    WriteLn('Result: ERROR HANDLING TESTS PASSED')
+  else
+    WriteLn('Result: ERROR HANDLING TESTS FAILED');
+end. 
