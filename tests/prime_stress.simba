@@ -1,0 +1,63 @@
+{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+
+var
+  ThreadManager: TThreadManager;
+  TasksCompleted: Integer = 0;
+  ResultLock: TLock;
+
+function IsPrime(n: Integer): Boolean;
+var
+  i: Integer;
+begin
+  if n < 2 then Exit(False);
+  if n = 2 then Exit(True);
+  if n mod 2 = 0 then Exit(False);
+
+  for i := 3 to Trunc(Sqrt(n)) do
+    if n mod i = 0 then Exit(False);
+
+  Result := True;
+end;
+
+procedure PrimeTask();
+var
+  I: Integer;
+begin
+  // Each task checks 0-100000 independently
+  for I := 0 to 100000 do
+    IsPrime(I);
+
+  // Signal completion
+  ResultLock.Enter();
+  Inc(TasksCompleted);
+  ResultLock.Leave();
+end;
+
+var
+  StartTime: Int64;
+  i: Integer;
+begin
+  ResultLock := TLock.Create();
+
+  try
+    // Create thread pool ONCE
+    ThreadManager.Init(16, dlNone);
+    StartTime := Time();
+
+    // Submit all 1000 tasks at once
+    for i := 1 to 1000 do
+      ThreadManager.Submit(Format('task-%d', [i]), @PrimeTask);
+
+    WriteLn(Format('All tasks submitted in: %dms', [Time() - StartTime]));
+
+    ThreadManager.Await(30000);
+
+    WriteLn(Format('Total time: %dms', [Time() - StartTime]));
+    WriteLn(Format('Completed %d tasks', [TasksCompleted]));
+
+    ThreadManager.Free();
+
+  finally
+    ResultLock.Free();
+  end;
+end.
