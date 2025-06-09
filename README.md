@@ -6,7 +6,7 @@ A library for managing concurrent operations and scheduled tasks.
 
 - **`TThreadManager`**: The primary interface for accessing both the thread pool and the scheduler.
 - **`TThreadPool`**: Manages a pool of worker threads to execute one-off asynchronous tasks.
-- **`TScheduler`**: Executes tasks at regular, fixed intervals using a dedicated pool.
+- **`TThreadScheduler`**: Executes tasks at regular, fixed intervals using a dedicated pool.
 
 ## Fundamentals
 

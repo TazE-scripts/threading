@@ -143,7 +143,7 @@ end;
 
 function TestSchedulerExceptions(): Boolean;
 var
-  Scheduler: TScheduler;
+  Scheduler: TThreadScheduler;
   InitialExceptionCount: Integer;
 begin
   Result := True;
@@ -195,7 +195,7 @@ end;
 
 function TestEdgeCases(): Boolean;
 var
-  Queue: TQueue;
+  Queue: TTaskQueue;
   Pool: TThreadPool;
 begin
   Result := True;

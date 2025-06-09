@@ -3,8 +3,8 @@
 
 function TestQueueBasics(): Boolean;
 var
-  Queue: TQueue;
-  Task1, Task2, Retrieved: PTask;
+  Queue: TTaskQueue;
+  Task1, Task2, Retrieved: PThreadTask;
 begin
   Result := True;
   WriteLn('  Testing basic queue operations...');
@@ -52,8 +52,8 @@ end;
 
 function TestQueuePriority(): Boolean;
 var
-  Queue: TQueue;
-  Task1, Task2, Task3, Retrieved: PTask;
+  Queue: TTaskQueue;
+  Task1, Task2, Task3, Retrieved: PThreadTask;
 begin
   Result := True;
   WriteLn('  Testing queue priority ordering...');
@@ -99,8 +99,8 @@ end;
 
 function TestQueueClear(): Boolean;
 var
-  Queue: TQueue;
-  Task1, Task2: PTask;
+  Queue: TTaskQueue;
+  Task1, Task2: PThreadTask;
 begin
   Result := True;
   WriteLn('  Testing queue clear operation...');
@@ -133,9 +133,9 @@ end;
 
 function TestSamePriority(): Boolean;
 var
-  Queue: TQueue;
-  Task1, Task2, Task3: PTask;
-  Retrieved: PTask;
+  Queue: TTaskQueue;
+  Task1, Task2, Task3: PThreadTask;
+  Retrieved: PThreadTask;
   FirstID: String;
 begin
   Result := True;
