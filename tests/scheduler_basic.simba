@@ -1,5 +1,5 @@
 //program Test_Scheduler_Basic;
-{$IFNDEF THREADING_LIBRARY}{$I ../threading.simba}{$ENDIF}
+{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
 
 var
   ScheduledTaskCount: Integer;
