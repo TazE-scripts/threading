@@ -1,5 +1,5 @@
 //program Test_Pool_Priority;
-{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
+{$IFNDEF THREADING}{$I WaspLib/utils/threading.simba}{$ENDIF}
 
 var
   ExecutionOrder: TStringArray;

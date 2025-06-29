@@ -1,5 +1,5 @@
 //program Test_Thread_Manager;
-{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
+{$IFNDEF THREADING}{$I WaspLib/utils/threading.simba}{$ENDIF}
 
 var
   ExecutedTasks: TStringArray;
@@ -40,7 +40,7 @@ begin
   Result := True;
   WriteLn('  Testing manager initialization...');
   
-  Manager.Init(4, dlNone);
+  Manager.Init(4, EDebugLevel.NONE);
   _Assert(Manager.IsSetup, 'Manager should be setup after init');
   _Assert(Manager.ThreadCount = 4, 'Should use specified thread count');
   
@@ -58,7 +58,7 @@ begin
   TaskLock := TLock.Create();
   SetLength(ExecutedTasks, 0);
   
-  Manager.Init(2, dlNone);
+  Manager.Init(2, EDebugLevel.NONE);
   
   _Assert(Manager.Submit('TestTask1', @ManagerTask1), 'Should successfully submit task');
   _Assert(Manager.Submit('TestTask2', @ManagerTask2), 'Should successfully submit second task');
@@ -85,7 +85,7 @@ begin
   TaskLock := TLock.Create();
   SetLength(ExecutedTasks, 0);
   
-  Manager.Init(3, dlNone);
+  Manager.Init(3, EDebugLevel.NONE);
   
   SetLength(TaskIDs, 3);
   TaskIDs[0] := 'BatchTask1';
@@ -116,7 +116,7 @@ begin
   TaskLock := TLock.Create();
   SetLength(ExecutedTasks, 0);
   
-  Manager.Init(2, dlNone);
+  Manager.Init(2, EDebugLevel.NONE);
   
   _Assert(Manager.Schedule('RecurringTask', @ScheduledTask, 100), 'Should successfully schedule task');
   
@@ -152,7 +152,7 @@ begin
   TaskLock := TLock.Create();
   SetLength(ExecutedTasks, 0);
   
-  Manager.Init(2, dlNone);
+  Manager.Init(2, EDebugLevel.NONE);
   
   Manager.Submit('StatsTask', @ManagerTask1);
   Manager.Schedule('StatsScheduled', @ScheduledTask, 200);
@@ -194,7 +194,7 @@ begin
   Result := True;
   WriteLn('  Testing invalid operations...');
   
-  Manager.Init(1, dlNone);
+  Manager.Init(1, EDebugLevel.NONE);
   
   // Test invalid task operations
   _Assert(not Manager.PauseTask('NonExistent'), 'Should fail to pause non-existent task');

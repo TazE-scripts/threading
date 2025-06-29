@@ -178,7 +178,7 @@ begin
   SetLength(ExceptionMessages, 0);
   SetLength(CompletionResults, 0);
   
-  Manager.Init(2, dlNone);
+  Manager.Init(2, EDebugLevel.NONE);
   Manager.SetExceptionHandler(@ExceptionHandler);
   Manager.SetCompletionHandler(@CompletionHandler);
   

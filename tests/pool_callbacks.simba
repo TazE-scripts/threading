@@ -1,5 +1,5 @@
 //program Test_Pool_Callbacks;
-{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
+{$IFNDEF WL_THREADING_INCLUDED}{$I WaspLib/utils/threading.simba}{$ENDIF}
 
 type
   TCallbackEvent = record

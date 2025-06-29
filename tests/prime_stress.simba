@@ -1,4 +1,4 @@
-{$IFNDEF THREADING}{$I ../threading.simba}{$ENDIF}
+{$IFNDEF THREADING}{$I WaspLib/utils/threading.simba}{$ENDIF}
 
 var
   ThreadManager: TThreadManager;
@@ -41,7 +41,7 @@ begin
 
   try
     // Create thread pool ONCE
-    ThreadManager.Init(16, dlNone);
+    ThreadManager.Init(16, EDebugLevel.NONE);
     StartTime := Time();
 
     // Submit all 1000 tasks at once

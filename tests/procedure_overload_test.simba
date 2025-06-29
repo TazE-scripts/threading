@@ -1,0 +1,321 @@
+//program Test_Procedure_Overload;
+{$IFNDEF THREADING}{$I WaspLib/utils/threading.simba}{$ENDIF}
+
+var
+  ExecutedTasks: TStringArray;
+  TaskLock: TLock;
+  ProcedureCounter: Integer;
+  MethodCounter: Integer;
+
+procedure AddExecutedTask(const TaskName: String);
+begin
+  TaskLock.Enter();
+  try
+    SetLength(ExecutedTasks, Length(ExecutedTasks) + 1);
+    ExecutedTasks[High(ExecutedTasks)] := TaskName;
+  finally
+    TaskLock.Leave();
+  end;
+end;
+
+// Regular procedures (not methods)
+procedure SimpleProcedure();
+begin
+  Inc(ProcedureCounter);
+  AddExecutedTask('SimpleProcedure');
+  Sleep(10);
+end;
+
+procedure CountingProcedure();
+begin
+  Inc(ProcedureCounter, 5);
+  AddExecutedTask('CountingProcedure');
+  Sleep(10);
+end;
+
+procedure ScheduledProcedure();
+begin
+  Inc(ProcedureCounter, 2);
+  AddExecutedTask('ScheduledProcedure');
+end;
+
+// Test object with methods for comparison
+type
+  TTestObject = record
+  end;
+
+procedure TTestObject.SimpleMethod();
+begin
+  Inc(MethodCounter);
+  AddExecutedTask('SimpleMethod');
+  Sleep(10);
+end;
+
+procedure TTestObject.CountingMethod();
+begin
+  Inc(MethodCounter, 3);
+  AddExecutedTask('CountingMethod');
+  Sleep(10);
+end;
+
+function TestProcedureSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing procedure submission...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    ProcedureCounter := 0;
+    
+    Manager.Init(2, EDebugLevel.NONE);
+    try
+      _Assert(Manager.Submit('ProcTask1', @SimpleProcedure), 'Should successfully submit procedure');
+      _Assert(Manager.Submit('ProcTask2', @CountingProcedure), 'Should successfully submit second procedure');
+      
+      Manager.Await(2000);
+      
+      _Assert(Length(ExecutedTasks) = 2, 'Should have executed 2 procedure tasks');
+      _Assert(ProcedureCounter = 6, 'Procedure counter should reflect executions (1 + 5)');
+      _Assert((ExecutedTasks[0] = 'SimpleProcedure') or (ExecutedTasks[1] = 'SimpleProcedure'), 'Should have executed SimpleProcedure');
+      _Assert((ExecutedTasks[0] = 'CountingProcedure') or (ExecutedTasks[1] = 'CountingProcedure'), 'Should have executed CountingProcedure');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestMethodSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+  TestObj: TTestObject;
+begin
+  Result := True;
+  WriteLn('  Testing method submission...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    MethodCounter := 0;
+    
+    Manager.Init(2, EDebugLevel.NONE);
+    try
+      _Assert(Manager.Submit('MethodTask1', @TestObj.SimpleMethod), 'Should successfully submit method');
+      _Assert(Manager.Submit('MethodTask2', @TestObj.CountingMethod), 'Should successfully submit second method');
+      
+      Manager.Await(2000);
+      
+      _Assert(Length(ExecutedTasks) = 2, 'Should have executed 2 method tasks');
+      _Assert(MethodCounter = 4, 'Method counter should reflect executions (1 + 3)');
+      _Assert((ExecutedTasks[0] = 'SimpleMethod') or (ExecutedTasks[1] = 'SimpleMethod'), 'Should have executed SimpleMethod');
+      _Assert((ExecutedTasks[0] = 'CountingMethod') or (ExecutedTasks[1] = 'CountingMethod'), 'Should have executed CountingMethod');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestMixedSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+  TestObj: TTestObject;
+begin
+  Result := True;
+  WriteLn('  Testing mixed procedure/method submission...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    ProcedureCounter := 0;
+    MethodCounter := 0;
+    
+    Manager.Init(3, EDebugLevel.NONE);
+    try
+      _Assert(Manager.Submit('Mixed1', @SimpleProcedure), 'Should successfully submit procedure');
+      _Assert(Manager.Submit('Mixed2', @TestObj.SimpleMethod), 'Should successfully submit method');
+      _Assert(Manager.Submit('Mixed3', @CountingProcedure), 'Should successfully submit another procedure');
+      
+      Manager.Await(3000);
+      
+      _Assert(Length(ExecutedTasks) = 3, 'Should have executed all 3 mixed tasks');
+      _Assert(ProcedureCounter = 6, 'Procedure counter should be correct (1 + 5)');
+      _Assert(MethodCounter = 1, 'Method counter should be correct (1)');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestProcedureBatchSubmission(): Boolean;
+var
+  Manager: TThreadManager;
+  TaskIDs: TStringArray;
+begin
+  Result := True;
+  WriteLn('  Testing procedure batch submission...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    ProcedureCounter := 0;
+    
+    Manager.Init(3, EDebugLevel.NONE);
+    try
+      SetLength(TaskIDs, 3);
+      TaskIDs[0] := 'BatchProc1';
+      TaskIDs[1] := 'BatchProc2';
+      TaskIDs[2] := 'BatchProc3';
+      
+      // Submit individual tasks instead of batch for now
+      _Assert(Manager.Submit(TaskIDs[0], @SimpleProcedure), 'Should submit first batch procedure');
+      _Assert(Manager.Submit(TaskIDs[1], @CountingProcedure), 'Should submit second batch procedure');
+      _Assert(Manager.Submit(TaskIDs[2], @SimpleProcedure), 'Should submit third batch procedure');
+      
+      Manager.Await(3000);
+      
+      _Assert(Length(ExecutedTasks) = 3, 'Should have executed all 3 batch procedures');
+      _Assert(ProcedureCounter = 7, 'Procedure counter should reflect batch executions (1 + 5 + 1)');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestProcedureScheduling(): Boolean;
+var
+  Manager: TThreadManager;
+  InitialCount, CountAfterPause, CountAfterResume: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing procedure scheduling...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    ProcedureCounter := 0;
+    
+    Manager.Init(2, EDebugLevel.NONE);
+    try
+      _Assert(Manager.Schedule('RecurringProc', @ScheduledProcedure, 100), 'Should successfully schedule procedure');
+      
+      InitialCount := ProcedureCounter;
+      Sleep(250); // Wait for multiple executions
+      
+      _Assert(ProcedureCounter > InitialCount, 'Scheduled procedure should have executed multiple times');
+      _Assert(Length(ExecutedTasks) > 0, 'Should have recorded scheduled executions');
+      
+      // Test pause/resume with procedure - account for timing issues
+      _Assert(Manager.PauseTask('RecurringProc'), 'Should successfully pause scheduled procedure');
+      Sleep(150); // Wait for any queued tasks to complete
+      CountAfterPause := ProcedureCounter;
+      Sleep(250); // Wait longer than the interval to ensure no new tasks are scheduled
+      _Assert(ProcedureCounter = CountAfterPause, 'Procedure should not execute while paused');
+      
+      _Assert(Manager.ResumeTask('RecurringProc'), 'Should successfully resume scheduled procedure');
+      CountAfterResume := ProcedureCounter;
+      Sleep(250); // Wait for execution after resume
+      _Assert(ProcedureCounter > CountAfterResume, 'Procedure should execute after resume');
+      
+      _Assert(Manager.CancelTask('RecurringProc'), 'Should successfully cancel scheduled procedure');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestMixedScheduling(): Boolean;
+var
+  Manager: TThreadManager;
+  TestObj: TTestObject;
+  InitialProcCount, InitialMethodCount: Integer;
+begin
+  Result := True;
+  WriteLn('  Testing mixed procedure/method scheduling...');
+  
+  TaskLock := TLock.Create();
+  try
+    SetLength(ExecutedTasks, 0);
+    ProcedureCounter := 0;
+    MethodCounter := 0;
+    
+    Manager.Init(2, EDebugLevel.NONE);
+    try
+      _Assert(Manager.Schedule('SchedProc', @ScheduledProcedure, 150), 'Should successfully schedule procedure');
+      _Assert(Manager.Schedule('SchedMethod', @TestObj.SimpleMethod, 150), 'Should successfully schedule method');
+      
+      InitialProcCount := ProcedureCounter;
+      InitialMethodCount := MethodCounter;
+      Sleep(400); // Wait for executions
+      
+      _Assert(ProcedureCounter > InitialProcCount, 'Scheduled procedure should have executed');
+      _Assert(MethodCounter > InitialMethodCount, 'Scheduled method should have executed');
+      
+      Manager.CancelTask('SchedProc');
+      Manager.CancelTask('SchedMethod');
+      
+    finally
+      Manager.Free();
+    end;
+  finally
+    TaskLock.Free();
+  end;
+end;
+
+function TestInvalidProcedureOperations(): Boolean;
+var
+  Manager: TThreadManager;
+begin
+  Result := True;
+  WriteLn('  Testing invalid procedure operations...');
+  
+  Manager.Init(1, EDebugLevel.NONE);
+  try
+    // Test invalid submissions (these should be caught by ValidateTask)
+    _Assert(not Manager.Submit('', @SimpleProcedure), 'Should reject empty task ID for procedure');
+    
+  finally
+    Manager.Free();
+  end;
+end;
+
+function RunProcedureOverloadTests(): Boolean;
+begin
+  Result := True;
+  WriteLn('Running: Procedure Overload Tests...');
+  
+  if not TestProcedureSubmission() then Result := False;
+  if not TestMethodSubmission() then Result := False;
+  if not TestMixedSubmission() then Result := False;
+  if not TestProcedureBatchSubmission() then Result := False;
+  if not TestProcedureScheduling() then Result := False;
+  if not TestMixedScheduling() then Result := False;
+  if not TestInvalidProcedureOperations() then Result := False;
+  
+  WriteLn('');
+end;
+
+begin
+  ClearSimbaOutput;
+  
+  if RunProcedureOverloadTests() then
+    WriteLn('Result: PROCEDURE OVERLOAD TESTS PASSED')
+  else
+    WriteLn('Result: PROCEDURE OVERLOAD TESTS FAILED');
+end. 
